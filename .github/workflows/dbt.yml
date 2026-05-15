@@ -1,0 +1,56 @@
+name: dbt backfill run
+
+on:
+  workflow_dispatch:
+    inputs:
+      select:
+        description: 'Model(s) to run (e.g. daily_market_info). Leave blank for all.'
+        required: false
+        default: ''
+      full_refresh:
+        description: 'Run with --full-refresh?'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: dbt-backfill-runs
+  cancel-in-progress: false
+
+jobs:
+  dbt-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+      DUNE_TEAM_NAME: ${{ vars.DUNE_TEAM_NAME }}
+      DBT_TARGET: prod
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Install dbt packages
+        run: uv run dbt deps
+
+      - name: Run models
+        run: |
+          FLAGS=""
+          if [ -n "${{ github.event.inputs.select }}" ]; then
+            FLAGS="$FLAGS --select ${{ github.event.inputs.select }}"
+          fi
+          if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
+            FLAGS="$FLAGS --full-refresh"
+          fi
+          uv run dbt run $FLAGS

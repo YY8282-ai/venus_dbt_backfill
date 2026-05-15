@@ -1,0 +1,33 @@
+venus_temp:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      user: dune
+      password: "{{ env_var('DUNE_API_KEY') }}"
+      host: trino.api.dune.com
+      port: 443
+      method: ldap
+      catalog: dune
+      schema: "{{ env_var('DUNE_TEAM_NAME', 'dune') }}"
+      threads: 4
+      http_scheme: https
+      cert: true
+      session_properties:
+        transformations: true
+      timezone: UTC
+    prod:
+      type: trino
+      user: dune
+      password: "{{ env_var('DUNE_API_KEY') }}"
+      host: trino.api.dune.com
+      port: 443
+      method: ldap
+      catalog: dune
+      schema: "{{ env_var('DUNE_TEAM_NAME', 'dune') }}"
+      threads: 4
+      http_scheme: https
+      cert: true
+      session_properties:
+        transformations: true
+      timezone: UTC

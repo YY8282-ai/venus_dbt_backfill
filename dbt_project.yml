@@ -1,0 +1,29 @@
+name: "venus_temp"
+version: "1.0.0"
+
+profile: "venus_temp"
+
+flags:
+  require_certificate_validation: true
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  venus_temp:
+    +materialized: view
+    +view_security: invoker
+    venus:
+      +post-hook:
+        - sql: "{{ optimize_table(this, model.config.materialized) }}"
+          transaction: true
+        - sql: "{{ vacuum_table(this, model.config.materialized) }}"
+          transaction: true
