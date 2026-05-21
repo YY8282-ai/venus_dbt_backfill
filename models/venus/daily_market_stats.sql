@@ -1,5 +1,5 @@
 {{ config(
-    alias = 'daily_market_stats'
+    alias = 'daily_market_stats_v2'
     , materialized = 'incremental'
     , incremental_strategy = 'delete+insert'
     , unique_key = ['day']
@@ -11,7 +11,7 @@
 }}
 
 WITH daily_market_info AS (
-    SELECT * FROM {{ ref('daily_market_info') }}
+    SELECT * FROM {{ ref('daily_market_info_v2') }}
 ),
 
 vBEP20_markets AS (

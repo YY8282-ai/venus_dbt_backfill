@@ -1,5 +1,5 @@
 {{ config(
-    alias = 'all_user_transactions'
+    alias = 'all_user_transactions_v2'
     , materialized = 'incremental'
     , incremental_strategy = 'delete+insert'
     , unique_key = ['evt_block_date']
@@ -11,7 +11,7 @@
 }}
 
 WITH daily_market_info AS (
-    SELECT * FROM {{ ref('daily_market_info') }}
+    SELECT * FROM {{ ref('daily_market_info_v2') }}
 ),
 
 tokens AS (

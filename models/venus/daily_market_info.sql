@@ -1,5 +1,5 @@
 {{ config(
-    alias = 'daily_market_info'
+    alias = 'daily_market_info_v2'
     , materialized = 'incremental'
     , incremental_strategy = 'delete+insert'
     , unique_key = ['day']
