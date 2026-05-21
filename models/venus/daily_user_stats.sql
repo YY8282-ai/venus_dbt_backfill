@@ -23,7 +23,7 @@ WITH timeseries AS (
             pool,
             DATE(MIN(evt_block_date)) AS start_date,
             CURRENT_DATE AS end_date
-        FROM {{ ref('all_user_transactions_v2') }}
+        FROM {{ ref('all_user_transactions') }}
         GROUP BY 1,2,3,4,5,6,7
     )
 
@@ -62,7 +62,7 @@ daily_transactions AS (
         COALESCE(SUM(amount_vtoken) FILTER(WHERE action = 'transfer out'), 0) AS transfer_out,
         COALESCE(SUM(amount_vtoken) FILTER(WHERE action = 'transfer in'), 0) - COALESCE(SUM(amount_vtoken) FILTER(WHERE action = 'transfer out'), 0) AS net_daily_flow,
         COUNT(DISTINCT tx_hash) FILTER(WHERE action IN ('supply', 'borrow', 'redeem', 'repay')) AS num_txs
-    FROM {{ ref('all_user_transactions_v2') }}
+    FROM {{ ref('all_user_transactions') }}
     GROUP BY 1,2,3
 ),
 
@@ -165,7 +165,7 @@ activity_data AS (
     FROM timeseries ts
         LEFT JOIN daily_transactions dt ON dt.user = ts.user AND dt.vtoken_address = ts.vtoken_address AND dt.day = ts.day
         LEFT JOIN daily_state ds ON ds.user = ts.user AND ds.vtoken_address = ts.vtoken_address AND ts.day >= ds.day AND (ts.day < ds.next_update_day OR ds.next_update_day IS NULL)
-        LEFT JOIN {{ ref('daily_market_info_v2') }} m ON ts.day = m.day AND ts.vtoken_address = m.vtoken_address
+        LEFT JOIN {{ ref('daily_market_info') }} m ON ts.day = m.day AND ts.vtoken_address = m.vtoken_address
         LEFT JOIN borrows b ON ts.vtoken_address = b.contract_address AND ts.user = b.user AND ts.day >= b.day AND (ts.day < b.next_update_day OR b.next_update_day IS NULL)
         LEFT JOIN fees_paid i ON ts.vtoken_address = i.contract_address AND ts.user = i.borrower AND ts.day >= i.day AND (ts.day < i.next_update_day OR i.next_update_day IS NULL)
 ),

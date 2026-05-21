@@ -11,7 +11,7 @@
 }}
 
 WITH daily_market_info AS (
-    SELECT * FROM {{ ref('daily_market_info_v2') }}
+    SELECT * FROM {{ ref('daily_market_info') }}
 ),
 
 /**** DAILY SUPPLY ****/
