@@ -91,6 +91,38 @@ borrows AS (
         SELECT chain, borrower AS user, contract_address, evt_block_time, evt_tx_hash, evt_index, accountBorrows FROM venus_multichain.vToken_evt_borrow
         UNION ALL
         SELECT chain, borrower AS user, contract_address, evt_block_time, evt_tx_hash, evt_index, accountBorrows FROM venus_multichain.vToken_evt_RepayBorrow
+        UNION ALL (
+        -- BNB Core Pool BEP20: Borrow from bnb.logs (replaces vbep20_bnb_core)
+        SELECT
+            'bnb' AS chain,
+            varbinary_substring(l.data, 13, 20) AS user, -- borrower = slot1
+            l.contract_address,
+            l.block_time AS evt_block_time,
+            l.tx_hash AS evt_tx_hash,
+            l.index AS evt_index,
+            CAST(varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS DOUBLE) AS accountBorrows -- slot3
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0x13ed6866d4e1ee6da46f845c46d7e54121a055d53b4700c80e55f2042b5bbfea -- Borrow(address,uint256,uint256,uint256)
+        )
+        UNION ALL (
+        -- BNB Core Pool BEP20: RepayBorrow from bnb.logs (replaces vbep20_bnb_core)
+        SELECT
+            'bnb' AS chain,
+            varbinary_substring(l.data, 45, 20) AS user, -- borrower = slot2
+            l.contract_address,
+            l.block_time AS evt_block_time,
+            l.tx_hash AS evt_tx_hash,
+            l.index AS evt_index,
+            CAST(varbinary_to_uint256(varbinary_substring(l.data, 97, 32)) AS DOUBLE) AS accountBorrows -- slot4
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0x1a2a22cb034d26d1854bdc6666a5b91fe25efbbb5dcad3b0355478d6f5c362a1 -- RepayBorrow(address,address,uint256,uint256,uint256)
+        )
     )
 
     SELECT
@@ -107,6 +139,10 @@ borrows AS (
         FROM borrow_balance
     )
     WHERE rn = 1 --latest borrow balance of the day
+),
+
+vBEP20_markets AS (
+    SELECT vtoken_contract_address, deployment_date FROM dune.xvslove_team.dataset_markets_all_chains WHERE blockchain = 'bnb' AND pool = 'Core' AND vtoken != 'vBNB'
 ),
 
 fees_paid AS (

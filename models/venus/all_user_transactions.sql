@@ -35,12 +35,26 @@ borrows AS (
       NULL AS amount_vtoken
     FROM (
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, borrowAmount FROM venus_bnb.VBNB_V2_evt_Borrow
-        UNION
-        SELECT 'bnb' AS chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, borrowAmount FROM venus_bnb.vbep20_bnb_core_evt_borrow
         UNION ALL
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, borrowAmount FROM venus_bnb.vbep20delegate_evt_borrow
         UNION ALL
         SELECT chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, borrowAmount FROM venus_multichain.vtoken_evt_borrow
+        UNION ALL (
+        -- BNB Core Pool BEP20: Borrow from bnb.logs (replaces vbep20_bnb_core_evt_borrow)
+        SELECT
+            'bnb' AS chain,
+            l.block_time AS evt_block_time,
+            l.block_number AS evt_block_number,
+            varbinary_substring(l.data, 13, 20) AS borrower,
+            l.contract_address,
+            l.tx_hash AS evt_tx_hash,
+            varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS borrowAmount
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0x13ed6866d4e1ee6da46f845c46d7e54121a055d53b4700c80e55f2042b5bbfea -- Borrow(address,uint256,uint256,uint256)
+        )
         ) a
     WHERE borrowAmount > 0
 ),
@@ -58,12 +72,26 @@ repays AS (
       NULL AS amount_vtoken
     FROM (
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, repayAmount FROM venus_bnb.VBNB_V2_evt_repayborrow
-        UNION
-        SELECT 'bnb' AS chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, repayAmount FROM venus_bnb.vbep20_bnb_core_evt_repayborrow
         UNION ALL
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, repayAmount FROM venus_bnb.vbep20delegate_evt_repayborrow
         UNION ALL
         SELECT chain, evt_block_time, evt_block_number, borrower, contract_address, evt_tx_hash, repayAmount FROM venus_multichain.vtoken_evt_repayborrow
+        UNION ALL (
+        -- BNB Core Pool BEP20: RepayBorrow from bnb.logs (replaces vbep20_bnb_core_evt_repayborrow)
+        SELECT
+            'bnb' AS chain,
+            l.block_time AS evt_block_time,
+            l.block_number AS evt_block_number,
+            varbinary_substring(l.data, 45, 20) AS borrower, -- borrower = slot2
+            l.contract_address,
+            l.tx_hash AS evt_tx_hash,
+            varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS repayAmount -- repayAmount = slot3
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0x1a2a22cb034d26d1854bdc6666a5b91fe25efbbb5dcad3b0355478d6f5c362a1 -- RepayBorrow(address,address,uint256,uint256,uint256)
+        )
         ) a
     WHERE repayAmount > 0
 ),
@@ -82,32 +110,44 @@ mints AS (
     FROM (
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, minter, contract_address, evt_tx_hash, mintAmount, mintTokens FROM venus_bnb.VBNB_V2_evt_mint
         UNION ALL
-        SELECT 'bnb' AS chain, evt_block_time, evt_block_number, minter, contract_address, evt_tx_hash, mintAmount, mintTokens FROM venus_bnb.vbep20_bnb_core_evt_mint
-        UNION ALL
-        SELECT 'bnb' AS chain, evt_block_time, evt_block_number, receiver AS minter, contract_address, evt_tx_hash, mintAmount, mintTokens FROM venus_bnb.vbep20_bnb_core_evt_mintbehalf
-        UNION ALL
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, minter, contract_address, evt_tx_hash, mintAmount, mintTokens FROM venus_bnb.vbep20delegate_evt_mint
         UNION ALL
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, receiver, contract_address, evt_tx_hash, mintAmount, mintTokens FROM venus_bnb.vbep20delegate_evt_mintbehalf
         UNION ALL
         SELECT chain, evt_block_time, evt_block_number, minter, contract_address, evt_tx_hash, mintAmount, mintTokens FROM venus_multichain.vtoken_evt_mint
-        --filling in historic data missing from decoded contracts
         UNION ALL (
-            select
-                'bnb' AS chain,
-                l.block_time,
-                l.block_number,
-                varbinary_substring(l.data, 13, 20) AS minter,
-                l.contract_address,
-                l.tx_hash,
-                varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS mintAmount,
-                varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS mintTokens
-            from vBEP20_markets m
-                inner join bnb.logs l on
-                    l.contract_address = m.vtoken_contract_address
-                    and l.block_date < date('2023-11-03')
-                    and l.block_date >= date(m.deployment_date)
-                    and l.topic0 = 0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f --mint
+        -- BNB Core Pool BEP20: Mint from bnb.logs (replaces vbep20_bnb_core_evt_mint, full history)
+        SELECT
+            'bnb' AS chain,
+            l.block_time AS evt_block_time,
+            l.block_number AS evt_block_number,
+            varbinary_substring(l.data, 13, 20) AS minter,
+            l.contract_address,
+            l.tx_hash AS evt_tx_hash,
+            varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS mintAmount,
+            varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS mintTokens
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f -- Mint(address,uint256,uint256)
+        )
+        UNION ALL (
+        -- BNB Core Pool BEP20: MintBehalf from bnb.logs (replaces vbep20_bnb_core_evt_mintbehalf, full history)
+        SELECT
+            'bnb' AS chain,
+            l.block_time AS evt_block_time,
+            l.block_number AS evt_block_number,
+            varbinary_substring(l.data, 45, 20) AS minter, -- receiver = slot2
+            l.contract_address,
+            l.tx_hash AS evt_tx_hash,
+            varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS mintAmount, -- mintAmount = slot3
+            varbinary_to_uint256(varbinary_substring(l.data, 97, 32)) AS mintTokens -- mintTokens = slot4
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0x297989b84a5f5b82d2ee0c266504c19bd9b10b410f187dc72ca4b0f0faecb345 -- MintBehalf(address,address,uint256,uint256)
         )
     ) a
     WHERE mintAmount > 0
@@ -126,29 +166,26 @@ redeems AS (
       redeemTokens AS amount_vtoken
     FROM (
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, redeemer, contract_address, evt_tx_hash, redeemAmount, redeemTokens FROM venus_bnb.VBNB_V2_evt_redeem
-        UNION
-        SELECT 'bnb' AS chain, evt_block_time, evt_block_number, redeemer, contract_address, evt_tx_hash, redeemAmount, redeemTokens FROM venus_bnb.vbep20_bnb_core_evt_redeem
         UNION ALL
         SELECT 'bnb' AS chain, evt_block_time, evt_block_number, redeemer, contract_address, evt_tx_hash, redeemAmount, redeemTokens FROM venus_bnb.vbep20delegate_evt_redeem
         UNION ALL
         SELECT chain, evt_block_time, evt_block_number, redeemer, contract_address, evt_tx_hash, redeemAmount, redeemTokens FROM venus_multichain.vtoken_evt_redeem
-        --filling in historic data missing from decoded contracts
         UNION ALL (
-            select
-                'bnb' AS chain,
-                l.block_time,
-                l.block_number,
-                varbinary_substring(l.data, 13, 20) AS redeemer,
-                l.contract_address,
-                l.tx_hash,
-                varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS redeemAmount,
-                varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS redeemTokens
-            from vBEP20_markets m
-                inner join bnb.logs l on
-                    l.contract_address = m.vtoken_contract_address
-                    and l.block_date < date('2023-11-03')
-                    and l.block_date >= date(m.deployment_date)
-                    and l.topic0 = 0xe5b754fb1abb7f01b499791d0b820ae3b6af3424ac1c59768edb53f4ec31a929 --redeem
+        -- BNB Core Pool BEP20: Redeem from bnb.logs (replaces vbep20_bnb_core_evt_redeem, full history)
+        SELECT
+            'bnb' AS chain,
+            l.block_time AS evt_block_time,
+            l.block_number AS evt_block_number,
+            varbinary_substring(l.data, 13, 20) AS redeemer,
+            l.contract_address,
+            l.tx_hash AS evt_tx_hash,
+            varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS redeemAmount,
+            varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS redeemTokens
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0xe5b754fb1abb7f01b499791d0b820ae3b6af3424ac1c59768edb53f4ec31a929 -- Redeem(address,uint256,uint256)
         )
     ) a
     WHERE redeemAmount > 0

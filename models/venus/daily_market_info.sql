@@ -16,6 +16,10 @@ WITH markets AS (
     WHERE vToken != 'VAI'
 ),
 
+vBEP20_markets AS (
+    SELECT vtoken_contract_address, deployment_date FROM dune.xvslove_team.dataset_markets_all_chains WHERE blockchain = 'bnb' AND pool = 'Core' AND vtoken != 'vBNB'
+),
+
 exchange_rates AS (
     SELECT
         *,
@@ -25,12 +29,26 @@ exchange_rates AS (
         FROM (
             SELECT 'bnb' AS chain, contract_address, call_block_date, output_0 FROM venus_bnb.vbnb_v2_call_exchangeratestored WHERE call_success
             UNION ALL
-            SELECT 'bnb' AS chain, contract_address, call_block_date, output_0 FROM venus_bnb.vbep20_bnb_core_call_exchangeratestored WHERE call_success
-            UNION ALL
             SELECT 'bnb' AS chain, contract_address, call_block_date, output_0 FROM venus_bnb.vbep20delegate_call_exchangeratestored WHERE call_success
             UNION ALL
+            -- BNB Core Pool BEP20: derive exchange rate from Mint events (replaces vbep20_bnb_core_call_exchangeratestored)
+            -- exchange_rate_raw = mintAmount * 1e10 / mintTokens  (same unit as call_exchangeratestored.output_0)
+            SELECT
+                'bnb' AS chain,
+                l.contract_address,
+                l.block_date AS call_block_date,
+                CAST(varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS DOUBLE)
+                    * POWER(10, 10)
+                    / CAST(varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS DOUBLE) AS output_0
+            FROM vBEP20_markets m
+            INNER JOIN bnb.logs l ON
+                l.contract_address = m.vtoken_contract_address
+                AND l.block_date >= date(m.deployment_date)
+                AND l.topic0 = 0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f -- Mint(address,uint256,uint256)
+            WHERE varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) > 0 -- exclude zero mintTokens
+            UNION ALL
             SELECT chain, contract_address, call_block_date, output_0 FROM venus_multichain.VToken_call_exchangeRateStored WHERE call_success
-    )
+        )
         GROUP BY 1,2,3
     )
 ),
@@ -44,9 +62,19 @@ reserve_factor AS ( --reserve factor changes over time
         FROM (
             SELECT 'bnb' AS chain, evt_block_date, contract_address, newReserveFactorMantissa FROM venus_bnb.vbnb_v2_evt_newreservefactor
             UNION ALL
-            SELECT 'bnb' AS chain, evt_block_date, contract_address, newReserveFactorMantissa FROM venus_bnb.vbep20_bnb_core_evt_newreservefactor
-            UNION ALL
             SELECT 'bnb' AS chain, evt_block_date, contract_address, newReserveFactorMantissa FROM venus_bnb.vbep20delegate_evt_newreservefactor
+            UNION ALL
+            -- BNB Core Pool BEP20: NewReserveFactor from bnb.logs (replaces vbep20_bnb_core_evt_newreservefactor)
+            SELECT
+                'bnb' AS chain,
+                l.block_date AS evt_block_date,
+                l.contract_address,
+                CAST(varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS DOUBLE) AS newReserveFactorMantissa -- newReserveFactorMantissa = slot2
+            FROM vBEP20_markets m
+            INNER JOIN bnb.logs l ON
+                l.contract_address = m.vtoken_contract_address
+                AND l.block_date >= date(m.deployment_date)
+                AND l.topic0 = 0xaaa68312e2ea9d50e16af5068410ab56e1a1fd06037b1a35664812c30f821460 -- NewReserveFactor(uint256,uint256)
             UNION ALL
             SELECT chain, evt_block_date, contract_address, newReserveFactorMantissa FROM venus_multichain.VToken_evt_NewReserveFactor
         )
@@ -61,9 +89,20 @@ comptroller AS ( -- used to get share of protocol liquidation fee
     FROM (
         SELECT 'bnb' AS chain, contract_address, evt_block_date AS day, newComptroller AS comptroller, ROW_NUMBER() OVER(PARTITION BY contract_address ORDER BY evt_block_time DESC, evt_index DESC) AS rn FROM venus_bnb.vbnb_v2_evt_newcomptroller
         UNION ALL
-        SELECT 'bnb' AS chain, contract_address, evt_block_date AS day, newComptroller AS comptroller, ROW_NUMBER() OVER(PARTITION BY contract_address ORDER BY evt_block_time DESC, evt_index DESC) AS rn FROM venus_bnb.vbep20_bnb_core_evt_newcomptroller
-        UNION ALL
         SELECT 'bnb' AS chain, contract_address, evt_block_date AS day, newComptroller AS comptroller, ROW_NUMBER() OVER(PARTITION BY contract_address ORDER BY evt_block_time DESC, evt_index DESC) AS rn FROM venus_bnb.vbep20delegate_evt_newcomptroller
+        UNION ALL
+        -- BNB Core Pool BEP20: NewComptroller from bnb.logs (replaces vbep20_bnb_core_evt_newcomptroller)
+        SELECT
+            'bnb' AS chain,
+            l.contract_address,
+            l.block_date AS day,
+            varbinary_substring(l.data, 45, 20) AS comptroller, -- newComptroller = slot2 (bytes 45-64)
+            ROW_NUMBER() OVER(PARTITION BY l.contract_address ORDER BY l.block_time DESC, l.index DESC) AS rn
+        FROM vBEP20_markets m
+        INNER JOIN bnb.logs l ON
+            l.contract_address = m.vtoken_contract_address
+            AND l.block_date >= date(m.deployment_date)
+            AND l.topic0 = 0x7ac369dbd14fa5ea3f473ed67cc9d598964a77501540ba6751eb0b3decf5870d -- NewComptroller(address,address)
         UNION ALL
         SELECT chain, contract_address, evt_block_date AS day, newComptroller AS comptroller, ROW_NUMBER() OVER(PARTITION BY contract_address ORDER BY evt_block_time DESC, evt_index DESC) AS rn FROM venus_multichain.vtoken_evt_newcomptroller
     )
