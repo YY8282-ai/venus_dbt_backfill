@@ -33,6 +33,7 @@ exchange_rates AS (
             UNION ALL
             -- BNB Core Pool BEP20: derive exchange rate from Mint events (replaces vbep20_bnb_core_call_exchangeratestored)
             -- exchange_rate_raw = mintAmount * 1e10 / mintTokens  (same unit as call_exchangeratestored.output_0)
+            -- Pre-upgrade (< 2023-11-03): Mint(address,uint256,uint256) — 3-param
             SELECT
                 'bnb' AS chain,
                 l.contract_address,
@@ -44,7 +45,23 @@ exchange_rates AS (
             INNER JOIN bnb.logs l ON
                 l.contract_address = m.vtoken_contract_address
                 AND l.block_date >= date(m.deployment_date)
+                AND l.block_date < date('2023-11-03')
                 AND l.topic0 = 0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f -- Mint(address,uint256,uint256)
+            WHERE varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) > 0 -- exclude zero mintTokens
+            UNION ALL
+            -- Post-upgrade (>= 2023-11-03): Mint(address,uint256,uint256,uint256) — 4-param with totalSupply
+            SELECT
+                'bnb' AS chain,
+                l.contract_address,
+                l.block_date AS call_block_date,
+                CAST(varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS DOUBLE)
+                    * POWER(10, 10)
+                    / CAST(varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS DOUBLE) AS output_0
+            FROM vBEP20_markets m
+            INNER JOIN bnb.logs l ON
+                l.contract_address = m.vtoken_contract_address
+                AND l.block_date >= date('2023-11-03')
+                AND l.topic0 = 0xb4c03061fb5b7fed76389d5af8f2e0ddb09f8c70d1333abbb62582835e10accb -- Mint(address,uint256,uint256,uint256)
             WHERE varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) > 0 -- exclude zero mintTokens
             UNION ALL
             SELECT chain, contract_address, call_block_date, output_0 FROM venus_multichain.VToken_call_exchangeRateStored WHERE call_success
