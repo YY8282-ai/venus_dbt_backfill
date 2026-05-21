@@ -14,10 +14,6 @@ WITH daily_market_info AS (
     SELECT * FROM {{ ref('daily_market_info_v2') }}
 ),
 
-vBEP20_markets AS (
-    SELECT vtoken_contract_address, deployment_date FROM dune.xvslove_team.dataset_markets_all_chains WHERE blockchain = 'bnb' AND pool = 'Core' AND vtoken != 'vBNB'
-),
-
 /**** DAILY SUPPLY ****/
 
 mints_and_redeems AS ( --all mint and redeem events
@@ -34,87 +30,6 @@ mints_and_redeems AS ( --all mint and redeem events
         SELECT 'bnb' AS chain, contract_address, evt_block_time, mintTokens AS amount FROM venus_bnb.vbep20delegate_evt_mintbehalf
         UNION ALL
         SELECT 'bnb' AS chain, contract_address, evt_block_time, -redeemTokens AS amount FROM venus_bnb.vbep20delegate_evt_redeem
-        UNION ALL (
-        -- BNB Core Pool BEP20: Mint pre-upgrade from bnb.logs (< 2023-11-03, 3-param)
-        SELECT
-            'bnb' AS chain,
-            l.contract_address,
-            l.block_time AS evt_block_time,
-            varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS amount -- mintTokens slot3
-        FROM vBEP20_markets m
-        INNER JOIN bnb.logs l ON
-            l.contract_address = m.vtoken_contract_address
-            AND l.block_date >= date(m.deployment_date)
-            AND l.block_date < date('2023-11-03')
-            AND l.topic0 = 0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f -- Mint(address,uint256,uint256)
-        )
-        UNION ALL (
-        -- BNB Core Pool BEP20: Mint post-upgrade from bnb.logs (>= 2023-11-03, 4-param with totalSupply)
-        SELECT
-            'bnb' AS chain,
-            l.contract_address,
-            l.block_time AS evt_block_time,
-            varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS amount -- mintTokens slot3
-        FROM vBEP20_markets m
-        INNER JOIN bnb.logs l ON
-            l.contract_address = m.vtoken_contract_address
-            AND l.block_date >= date('2023-11-03')
-            AND l.topic0 = 0xb4c03061fb5b7fed76389d5af8f2e0ddb09f8c70d1333abbb62582835e10accb -- Mint(address,uint256,uint256,uint256)
-        )
-        UNION ALL (
-        -- BNB Core Pool BEP20: MintBehalf pre-upgrade from bnb.logs (< 2023-11-03, 4-param)
-        SELECT
-            'bnb' AS chain,
-            l.contract_address,
-            l.block_time AS evt_block_time,
-            varbinary_to_uint256(varbinary_substring(l.data, 97, 32)) AS amount -- mintTokens slot4
-        FROM vBEP20_markets m
-        INNER JOIN bnb.logs l ON
-            l.contract_address = m.vtoken_contract_address
-            AND l.block_date >= date(m.deployment_date)
-            AND l.block_date < date('2023-11-03')
-            AND l.topic0 = 0x297989b84a5f5b82d2ee0c266504c19bd9b10b410f187dc72ca4b0f0faecb345 -- MintBehalf(address,address,uint256,uint256)
-        )
-        UNION ALL (
-        -- BNB Core Pool BEP20: MintBehalf post-upgrade from bnb.logs (>= 2023-11-03, 5-param with totalSupply)
-        SELECT
-            'bnb' AS chain,
-            l.contract_address,
-            l.block_time AS evt_block_time,
-            varbinary_to_uint256(varbinary_substring(l.data, 97, 32)) AS amount -- mintTokens slot4
-        FROM vBEP20_markets m
-        INNER JOIN bnb.logs l ON
-            l.contract_address = m.vtoken_contract_address
-            AND l.block_date >= date('2023-11-03')
-            AND l.topic0 = 0xa24ddbdf0865ba440d364725c062eac72a908faeedffc33fe64d4640c82e3ab8 -- MintBehalf(address,address,uint256,uint256,uint256)
-        )
-        UNION ALL (
-        -- BNB Core Pool BEP20: Redeem pre-upgrade from bnb.logs (< 2023-11-03, 3-param)
-        SELECT
-            'bnb' AS chain,
-            l.contract_address,
-            l.block_time AS evt_block_time,
-            -varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS amount -- -redeemTokens slot3
-        FROM vBEP20_markets m
-        INNER JOIN bnb.logs l ON
-            l.contract_address = m.vtoken_contract_address
-            AND l.block_date >= date(m.deployment_date)
-            AND l.block_date < date('2023-11-03')
-            AND l.topic0 = 0xe5b754fb1abb7f01b499791d0b820ae3b6af3424ac1c59768edb53f4ec31a929 -- Redeem(address,uint256,uint256)
-        )
-        UNION ALL (
-        -- BNB Core Pool BEP20: Redeem post-upgrade from bnb.logs (>= 2023-11-03, 4-param with totalSupply)
-        SELECT
-            'bnb' AS chain,
-            l.contract_address,
-            l.block_time AS evt_block_time,
-            -varbinary_to_uint256(varbinary_substring(l.data, 65, 32)) AS amount -- -redeemTokens slot3
-        FROM vBEP20_markets m
-        INNER JOIN bnb.logs l ON
-            l.contract_address = m.vtoken_contract_address
-            AND l.block_date >= date('2023-11-03')
-            AND l.topic0 = 0xbd5034ffbd47e4e72a94baa2cdb74c6fad73cb3bcdc13036b72ec8306f5a7646 -- Redeem(address,uint256,uint256,uint256)
-        )
 ),
 
 daily_supply AS ( --supply over time = mints - redeems
@@ -142,19 +57,6 @@ borrows AS (
         SELECT 'bnb' AS chain, evt_block_time, contract_address, totalBorrows FROM venus_bnb.vbnb_v2_evt_accrueinterest
         UNION ALL
         SELECT 'bnb' AS chain, evt_block_time, contract_address, totalBorrows FROM venus_bnb.vbep20delegate_evt_accrueinterest
-        UNION ALL (
-        -- BNB Core Pool BEP20: AccrueInterest from bnb.logs (replaces vbep20_bnb_core)
-        SELECT
-            'bnb' AS chain,
-            l.block_time AS evt_block_time,
-            l.contract_address,
-            varbinary_to_uint256(varbinary_substring(l.data, 97, 32)) AS totalBorrows -- slot4
-        FROM vBEP20_markets m
-        INNER JOIN bnb.logs l ON
-            l.contract_address = m.vtoken_contract_address
-            AND l.block_date >= date(m.deployment_date)
-            AND l.topic0 = 0x4dec04e750ca11537cabcd8a9eab06494de08da3735bc8871cd41250e190bc04 -- AccrueInterest(uint256,uint256,uint256,uint256)
-        )
         UNION ALL
         SELECT chain, evt_block_time, contract_address, totalBorrows FROM venus_multichain.vToken_evt_accrueinterest
 ),
@@ -194,19 +96,6 @@ daily_interest AS (
                 SELECT 'bnb' AS chain, evt_block_time, contract_address, interestAccumulated FROM venus_bnb.VBNB_V2_evt_AccrueInterest
                 UNION ALL
                 SELECT 'bnb' AS chain, evt_block_time, contract_address, interestAccumulated FROM venus_bnb.vbep20delegate_evt_accrueinterest
-                UNION ALL (
-                -- BNB Core Pool BEP20: AccrueInterest from bnb.logs (replaces vbep20_bnb_core)
-                SELECT
-                    'bnb' AS chain,
-                    l.block_time AS evt_block_time,
-                    l.contract_address,
-                    varbinary_to_uint256(varbinary_substring(l.data, 33, 32)) AS interestAccumulated -- slot2
-                FROM vBEP20_markets m
-                INNER JOIN bnb.logs l ON
-                    l.contract_address = m.vtoken_contract_address
-                    AND l.block_date >= date(m.deployment_date)
-                    AND l.topic0 = 0x4dec04e750ca11537cabcd8a9eab06494de08da3735bc8871cd41250e190bc04 -- AccrueInterest(uint256,uint256,uint256,uint256)
-                )
                 UNION ALL
                 SELECT chain, evt_block_time, contract_address, interestAccumulated FROM venus_multichain.vToken_evt_AccrueInterest
             )
