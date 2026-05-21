@@ -84,10 +84,6 @@ borrows AS (
         UNION ALL
         SELECT 'bnb' AS chain, borrower AS user, contract_address, evt_block_time, evt_tx_hash, evt_index, accountBorrows FROM venus_bnb.vbnb_v2_evt_repayborrow
         UNION ALL
-        SELECT 'bnb' AS chain, borrower AS user, contract_address, evt_block_time, evt_tx_hash, evt_index, accountBorrows FROM venus_bnb.vbep20_bnb_core_evt_borrow
-        UNION ALL
-        SELECT 'bnb' AS chain, borrower AS user, contract_address, evt_block_time, evt_tx_hash, evt_index, accountBorrows FROM venus_bnb.vbep20_bnb_core_evt_repayborrow
-        UNION ALL
         SELECT 'bnb' AS chain, borrower AS user, contract_address, evt_block_time, evt_tx_hash, evt_index, accountBorrows FROM venus_bnb.vbep20delegate_evt_borrow
         UNION ALL
         SELECT 'bnb' AS chain, borrower AS user, contract_address, evt_block_time, evt_tx_hash, evt_index, accountBorrows FROM venus_bnb.vbep20delegate_evt_repayborrow
