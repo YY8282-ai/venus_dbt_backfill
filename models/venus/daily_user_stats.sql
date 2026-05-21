@@ -105,7 +105,7 @@ borrows AS (
         INNER JOIN bnb.logs l ON
             l.contract_address = m.vtoken_contract_address
             AND l.block_date >= date(m.deployment_date)
-            AND l.topic0 = 0x13ed6866d4e1ee6da46f845c46d7e54121a055d53b4700c80e55f2042b5bbfea -- Borrow(address,uint256,uint256,uint256)
+            AND l.topic0 = 0x13ed6866d4e1ee6da46f845c46d7e54120883d75c5ea9a2dacc1c4ca8984ab80 -- Borrow(address,uint256,uint256,uint256)
         )
         UNION ALL (
         -- BNB Core Pool BEP20: RepayBorrow from bnb.logs (replaces vbep20_bnb_core)
